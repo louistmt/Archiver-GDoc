@@ -1,5 +1,6 @@
 /**
- * at the end returns
+ * Processes the text runs contained in the json of the google
+ * doc into a list that contains items such as the following
  * 
  * {
  *   type: "NORMAL_TEXT"
@@ -8,167 +9,138 @@
  *     italic: false,
  *     bold: false,
  *     strike: false,
- *     under: false
+ *     under: false,
+ *     bullet: false,
+ *     paragraph: false
  *   }
  * }[]
  * 
+ * The format of the context is
  * 
- * 
+ * {
+ *   normalStyle: {
+ *     italic: false,
+ *     bold: false,
+ *     strike: false,
+ *     under: false
+ *   }
+ *   styleName: "NORMAL_TEXT",
+ *   paragraphs: []
+ * }
  */
-
-function parseDocJSON(context) {
-  const parsed = [];
+function processDocToNodes(jsonDoc) {
+  const nodes = []
+  const context = createContext(jsonDoc)
 
   for (let paragraph of context.paragraphs) {
-    parseParagraph(paragraph, context, parsed);
+    nodes.push(...processParagraphToNodes(paragraph, context))
   }
 
-  return parsed;
+  return nodes
 }
 
-function parseParagraph(paragraph, context, parsed) {
-  const styleName = paragraph.paragraphStyle.namedStyleType;
-  const textRuns = extractTextRuns(paragraph);
-  const list = paragraph.bullet ? true : false;
+function processDocToContext(jsonDoc) {
+  const {styles} = jsonDoc.namedStyles;
+  const normalStyle = styles.find((style) => style.namedStyleType == "NORMAL_TEXT").textStyle;
+  const {content} = jsonDoc.body;
+  const paragraphs = content.filter((element) => element.paragraph).map(element => element.paragraph);
 
-  context.styleName = styleName;
-  context.list = list;
-  parseTextRuns(textRuns, context, parsed);
+  return {normalStyle: extractStyle(normalStyle), styleName: "NORMAL_TEXT", paragraphs};
 }
 
-function parseTextRuns(textRuns, context, parsed) {
+function processParagraphToNodes(paragraph, context) {
+  const nodes = []
+  const textRuns = extractTextRuns(paragraph)
+  const styleName = paragraph.paragraphStyle.namedStyleType
+  const {normalStyle} = context
+  const basicStyle = createBasicStyle()
+  basicStyle.list = paragraph.bullet ? true : false
 
-  switch (context.styleName) {
+  switch (styleName) {
     case "TITLE":
-      parseTitle(textRuns, context, parsed);
+      var node = createNode()
+      node.type = "TITLE"
+      node.content = extractStringFromTextRuns(textRuns)
+      node.style = {
+        ...basicStyle,
+        bold: true,
+        underline: true,
+        paragraph: true
+      }
+      node.length = calculateNodeContentLength(node)
+      node.styleLength = calculateNodeStyleLength(node)
+      nodes.push(node)
       break;
     case "SUBTITLE":
-      parseSubTitle(textRuns, context, parsed);
+      var node = createNode()
+      node.type = "SUBTITLE"
+      node.content = extractStringFromTextRuns(textRuns)
+      node.style = {
+        ...basicStyle,
+        italic: true,
+        paragraph: true
+      }
+      node.length = calculateNodeContentLength(node)
+      node.styleLength = calculateNodeStyleLength(node)
+      nodes.push(node)
       break;
     case "HEADING_1":
-      parseHeading1(textRuns, context, parsed);
+      var node = createNode()
+      node.type = "HEADING_1",
+      node.content = extractStringFromTextRuns(textRuns)
+      node.style = {
+        ...basicStyle,
+        bold: true,
+        paragraph: true
+      }
+      node.length = calculateNodeContentLength(node)
+      node.styleLength = calculateNodeStyleLength(node)
+      nodes.push(node)
       break;
     case "HEADING_2":
-      parseHeading2(textRuns, context, parsed);
+      var node = createNode()
+      node.type = "HEADING_2",
+      node.content = extractStringFromTextRuns(textRuns)
+      node.style = {
+        ...basicStyle,
+        bold: true,
+        paragraph: true
+      }
+      node.length = calculateNodeContentLength(node)
+      node.styleLength = calculateNodeStyleLength(node)
+      nodes.push(node)
       break;
     case "HEADING_3":
-      parseHeading3(textRuns, context, parsed);
+      var node = createNode()
+      node.type = "HEADING_3",
+      node.content = extractStringFromTextRuns(textRuns)
+      node.style = {
+        ...basicStyle,
+        italic: true,
+        paragraph: true
+      }
+      node.length = calculateNodeContentLength(node)
+      node.styleLength = calculateNodeStyleLength(node)
+      nodes.push(node)
       break;
     default:
-      parseNormal(textRuns, context, parsed);
+      for (let i = 0; i < textRuns.length; i++) {
+        const textRun = textRuns[i]
+        var node = createNode()
+        node.type = "NORMAL_TEXT"
+        node.content = textRun.content
+        node.style = {
+          ...normalStyle,
+          ...textRun.style,
+          list: i == 0 && basicStyle.list,
+          paragraph: i == textRuns.length - 1
+        }
+        node.length = calculateNodeContentLength(node)
+        node.styleLength = calculateNodeStyleLength(node)
+        nodes.push(node)
+      }
       break;
   }
 
-
+  return nodes
 }
-
-function parseTitle(textRuns, context, parsed) {
-  const contentObj = {
-    type: "TITLE",
-    content: [],
-    style: createBasicStyle()
-  };
-  contentObj.style.bold = true;
-  contentObj.style.under = true;
-
-  if (context.list) {
-    context.list = false;
-    contentObj.content.push("\\> ");
-  }
-  contentObj.content.push(extractStringFromTextRuns(textRuns));
-  parsed.push(contentObj);
-}
-
-function parseSubTitle(textRuns, context, parsed) {
-  const contentObj = {
-    type: "SUBTITLE",
-    content: [],
-    style: createBasicStyle()
-  };
-  contentObj.style.italic = true;
-
-  if (context.list) {
-    context.list = false;
-    contentObj.content.push("\\> ");
-  }
-  contentObj.content.push(extractStringFromTextRuns(textRuns));
-  parsed.push(contentObj);
-}
-
-function parseHeading1(textRuns, context, parsed) {
-  const contentObj = {
-    type: "HEADING_1",
-    content: [],
-    style: createBasicStyle()
-  };
-  contentObj.style.bold = true;
-
-  if (context.list) {
-    context.list = false;
-    contentObj.content.push("\\> ");
-  }
-  contentObj.content.push(extractStringFromTextRuns(textRuns));
-  parsed.push(contentObj);
-}
-
-function parseHeading2(textRuns, context, parsed) {
-  const contentObj = {
-    type: "HEADING_2",
-    content: [],
-    style: createBasicStyle()
-  };
-  contentObj.bold = true;
-
-  if (context.list) {
-    context.list = false;
-    contentObj.content.push("\\> ");
-  }
-  contentObj.content.push("- ", extractStringFromTextRuns(textRuns));
-  parsed.push(contentObj);
-}
-
-function parseHeading3(textRuns, context, parsed) {
-  const contentObj = {
-    type: "HEADING_3",
-    content: [],
-    style: createBasicStyle()
-  };
-  contentObj.style.italic = true;
-
-  if (context.list) {
-    context.list = false;
-    contentObj.content.push("\\> ");
-  }
-  contentObj.content.push("- ", extractStringFromTextRuns(textRuns));
-  parsed.push(contentObj);
-}
-
-function parseNormal(textRuns, context, parsed) {
-  for (let textRun of textRuns) {
-    const contentObj = {
-      type: "NORMAL_TEXT",
-      content: [],
-      style: {
-        ...context.normalStyle,
-        ...textRun.style
-      }
-    };
-
-    if (context.list) {
-      context.list = false;
-      contentObj.content.push("\\> ");
-    }
-    contentObj.content.push(textRun.content);
-    parsed.push(contentObj);
-  }
-}
-
-
-
-
-
-
-
-
-
-
